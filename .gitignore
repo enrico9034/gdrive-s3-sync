@@ -48,6 +48,7 @@ token.pickle
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
 
 # Docker
 *.pid
