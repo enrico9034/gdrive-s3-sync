@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+    push:
+        branches: [main, develop]
+    pull_request:
+        branches: [main, develop]
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+
+        strategy:
+            matrix:
+                python-version: ["3.9", "3.10", "3.11"]
+
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Set up Python ${{ matrix.python-version }}
+              uses: actions/setup-python@v4
+              with:
+                  python-version: ${{ matrix.python-version }}
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+
+            - name: Run unit tests
+              run: |
+                  pytest tests/ -v \
+                    --ignore=tests/integration_test.py \
+                    --ignore=tests/integration_test_oauth2.py \
+                    --ignore=tests/test_folder_structure.py \
+                    --cov=src --cov-report=xml
+
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@v3
+              with:
+                  file: ./coverage.xml
+                  fail_ci_if_error: false
+
+    docker-build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Build Docker image
+              run: |
+                  docker build -t gdrive-s3-sync:test .
+
+            - name: Test Docker image
+              run: |
+                  docker run --rm gdrive-s3-sync:test python -c "import src; print('Import successful')"

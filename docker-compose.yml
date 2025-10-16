@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  sync:
+    build: .
+    container_name: gdrive-s3-sync
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Mount credentials directory
+      - ./credentials:/app/credentials:ro
+      # Mount logs directory (optional)
+      - ./logs:/app/logs
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID}
+      - GDRIVE_CREDENTIALS_PATH=/app/credentials/credentials.json
+      - SYNC_INTERVAL_SECONDS=${SYNC_INTERVAL_SECONDS:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
