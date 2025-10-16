@@ -80,41 +80,71 @@ class GDriveOAuth2Client:
         
         return creds
     
-    def list_files(self) -> List[Dict[str, any]]:
+    def _list_files_recursive(self, folder_id: str, path: str = "") -> List[Dict]:
         """
-        List all files in the Google Drive folder
+        Recursively list all files in a folder and its subfolders
         
-        Returns:
-            List of dictionaries containing file information
-        """
-        try:
-            logger.info(f"Listing files in Google Drive folder: {self.folder_id}")
+        Args:
+            folder_id: ID of the folder to search
+            path: Current path prefix (for tracking file locations)
             
-            query = f"'{self.folder_id}' in parents and trashed=false"
+        Returns:
+            List of file information dictionaries
+        """
+        all_files = []
+        
+        try:
+            query = f"'{folder_id}' in parents and trashed=false"
             results = self.service.files().list(
                 q=query,
-                fields="files(id, name, size, modifiedTime)",
+                fields="files(id, name, size, modifiedTime, mimeType)",
                 pageSize=1000
             ).execute()
             
-            files = results.get('files', [])
-            logger.info(f"Found {len(files)} files in Google Drive folder")
+            items = results.get('files', [])
             
-            # Convert to standardized format
-            formatted_files = []
-            for file in files:
-                formatted_files.append({
-                    'id': file['id'],
-                    'name': file['name'],
-                    'size': int(file.get('size', 0)),
-                    'modified_time': file.get('modifiedTime')
-                })
+            for item in items:
+                mime_type = item.get('mimeType')
+                item_name = item['name']
+                item_path = f"{path}/{item_name}" if path else item_name
+                
+                if mime_type == 'application/vnd.google-apps.folder':
+                    # Recursively search subfolders
+                    subfolder_files = self._list_files_recursive(item['id'], item_path)
+                    all_files.extend(subfolder_files)
+                else:
+                    # It's a file, add it to the list
+                    all_files.append({
+                        'id': item['id'],
+                        'name': item_path,  # Use full path as name
+                        'size': int(item.get('size', 0)),
+                        'modified_time': item.get('modifiedTime')
+                    })
             
-            return formatted_files
+        except HttpError as error:
+            logger.error(f"Error listing files in folder {folder_id}: {error}")
+            
+        return all_files
+    
+    def list_files(self) -> List[Dict]:
+        """
+        List all files in the specified Google Drive folder (recursively)
+        
+        Returns:
+            List of file information dictionaries with keys: id, name, size, modified_time
+        """
+        try:
+            logger.info(f"Listing files recursively in Google Drive folder: {self.folder_id}")
+            
+            files = self._list_files_recursive(self.folder_id)
+            
+            logger.info(f"Found {len(files)} files in total (including subfolders)")
+            
+            return files
             
         except HttpError as error:
             logger.error(f"Error listing Google Drive files: {error}")
-            raise
+            raise Exception(f"Failed to list Google Drive files: {error}")
     
     def upload_file(self, file_path: str, file_name: str, parent_folder_id: str = None) -> str:
         """

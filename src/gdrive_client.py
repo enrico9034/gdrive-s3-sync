@@ -44,25 +44,65 @@ class GDriveClient:
         self.service = build('drive', 'v3', credentials=self.creds)
         logger.info(f"Google Drive client initialized for folder: {folder_id}")
     
+    def _list_files_recursive(self, folder_id: str, path: str = "") -> List[Dict[str, any]]:
+        """
+        Recursively list all files in a folder and its subfolders
+        
+        Args:
+            folder_id: ID of the folder to search
+            path: Current path prefix (for tracking file locations)
+            
+        Returns:
+            List of file information dictionaries
+        """
+        all_files = []
+        
+        try:
+            query = f"'{folder_id}' in parents and trashed=false"
+            results = self.service.files().list(
+                q=query,
+                fields="files(id, name, size, modifiedTime, mimeType)",
+                pageSize=1000
+            ).execute()
+            
+            items = results.get('files', [])
+            
+            for item in items:
+                mime_type = item.get('mimeType')
+                item_name = item['name']
+                item_path = f"{path}/{item_name}" if path else item_name
+                
+                if mime_type == 'application/vnd.google-apps.folder':
+                    # Recursively search subfolders
+                    subfolder_files = self._list_files_recursive(item['id'], item_path)
+                    all_files.extend(subfolder_files)
+                else:
+                    # It's a file, add it to the list
+                    all_files.append({
+                        'id': item['id'],
+                        'name': item_path,  # Use full path as name
+                        'size': int(item.get('size', 0)),
+                        'modified_time': item.get('modifiedTime')
+                    })
+            
+        except HttpError as e:
+            logger.error(f"Error listing files in folder {folder_id}: {e}")
+            
+        return all_files
+    
     def list_files(self) -> List[Dict[str, any]]:
         """
-        List all files in the Google Drive folder
+        List all files in the Google Drive folder (recursively)
         
         Returns:
             List of dictionaries containing file information (id, name, size)
         """
         try:
-            logger.info(f"Listing files in Google Drive folder: {self.folder_id}")
-            query = f"'{self.folder_id}' in parents and trashed=false"
+            logger.info(f"Listing files recursively in Google Drive folder: {self.folder_id}")
             
-            results = self.service.files().list(
-                q=query,
-                fields="files(id, name, size, modifiedTime)",
-                pageSize=1000
-            ).execute()
+            files = self._list_files_recursive(self.folder_id)
             
-            files = results.get('files', [])
-            logger.info(f"Found {len(files)} files in Google Drive folder")
+            logger.info(f"Found {len(files)} files in total (including subfolders)")
             return files
         
         except HttpError as e:
