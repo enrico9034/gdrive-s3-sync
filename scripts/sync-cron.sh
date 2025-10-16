@@ -6,7 +6,13 @@ echo "=== Sync started at $(date) ==="
 
 # Export environment variables from docker environment
 # (cron doesn't inherit environment variables by default)
-export $(cat /proc/1/environ | tr '\0' '\n' | xargs)
+# Filter out variables with special characters that aren't valid identifiers
+while IFS='=' read -r -d '' key value; do
+    # Only export if key is a valid identifier (alphanumeric + underscore)
+    if [[ "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        export "$key=$value"
+    fi
+done < /proc/1/environ
 
 # Run the sync
 cd /app
