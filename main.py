@@ -57,6 +57,61 @@ def validate_env_vars():
         raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 
+def log_sync_stats(stats: dict):
+    """Log sync statistics in a consistent format"""
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"Sync completed - "
+        f"Uploaded: {stats['uploaded']}, "
+        f"Updated: {stats['updated']}, "
+        f"Deleted: {stats['deleted']}, "
+        f"Unchanged: {stats['unchanged']}, "
+        f"Errors: {stats['errors']}"
+    )
+
+
+def run_sync_once(sync_manager):
+    """Run sync once and exit"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        stats = sync_manager.sync()
+        log_sync_stats(stats)
+        
+        if stats['errors'] > 0:
+            logger.warning(f"Sync completed with {stats['errors']} errors")
+            sys.exit(1)
+        else:
+            logger.info("Sync completed successfully")
+            sys.exit(0)
+            
+    except Exception as e:
+        logger.error(f"Error during sync: {e}", exc_info=True)
+        sys.exit(1)
+
+
+def run_sync_loop(sync_manager, sync_interval: int):
+    """Run sync in continuous loop"""
+    logger = logging.getLogger(__name__)
+    
+    while True:
+        try:
+            stats = sync_manager.sync()
+            log_sync_stats(stats)
+            
+            logger.info(f"Waiting {sync_interval} seconds before next sync...")
+            time.sleep(sync_interval)
+        
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal, shutting down...")
+            break
+        
+        except Exception as e:
+            logger.error(f"Error during sync: {e}", exc_info=True)
+            logger.info(f"Waiting {sync_interval} seconds before retry...")
+            time.sleep(sync_interval)
+
+
 def main():
     """Main application function"""
     # Load environment variables
@@ -121,33 +176,15 @@ def main():
         
         logger.info(f"Path handling: {'Preserve S3 folder structure' if preserve_structure else 'Flatten to root (replace / with _)'}")
         
-        # Run sync loop
-        logger.info(f"Starting sync loop (interval: {sync_interval} seconds)")
+        # Check if running in one-shot mode
+        run_once = os.getenv('RUN_ONCE', 'false').lower() == 'true'
         
-        while True:
-            try:
-                stats = sync_manager.sync()
-                
-                logger.info(
-                    f"Sync completed - "
-                    f"Uploaded: {stats['uploaded']}, "
-                    f"Updated: {stats['updated']}, "
-                    f"Deleted: {stats['deleted']}, "
-                    f"Unchanged: {stats['unchanged']}, "
-                    f"Errors: {stats['errors']}"
-                )
-                
-                logger.info(f"Waiting {sync_interval} seconds before next sync...")
-                time.sleep(sync_interval)
-            
-            except KeyboardInterrupt:
-                logger.info("Received interrupt signal, shutting down...")
-                break
-            
-            except Exception as e:
-                logger.error(f"Error during sync: {e}", exc_info=True)
-                logger.info(f"Waiting {sync_interval} seconds before retry...")
-                time.sleep(sync_interval)
+        if run_once:
+            logger.info("Running in one-shot mode (RUN_ONCE=true)")
+            run_sync_once(sync_manager)
+        else:
+            logger.info(f"Starting sync loop (interval: {sync_interval} seconds)")
+            run_sync_loop(sync_manager, sync_interval)
     
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)

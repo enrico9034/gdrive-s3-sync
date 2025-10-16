@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+  # Continuous sync mode (default - uses sleep loop)
   sync:
     build: .
     container_name: gdrive-s3-sync
@@ -17,7 +18,77 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
       - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID}
       - GDRIVE_CREDENTIALS_PATH=/app/credentials/credentials.json
+      - GDRIVE_TOKEN_PATH=/app/credentials/token.pickle
+      - GDRIVE_USE_OAUTH2=${GDRIVE_USE_OAUTH2:-true}
       - SYNC_INTERVAL_SECONDS=${SYNC_INTERVAL_SECONDS:-300}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRESERVE_STRUCTURE=${PRESERVE_STRUCTURE:-true}
+      - RUN_ONCE=false
+    profiles:
+      - continuous
+
+  # Cron-based sync mode (better for long intervals like 30+ minutes)
+  sync-cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.cron
+    container_name: gdrive-s3-sync-cron
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Mount credentials directory
+      - ./credentials:/app/credentials:ro
+      # Mount logs directory
+      - ./logs:/var/log/gdrive-sync
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID}
+      - GDRIVE_CREDENTIALS_PATH=/app/credentials/credentials.json
+      - GDRIVE_TOKEN_PATH=/app/credentials/token.pickle
+      - GDRIVE_USE_OAUTH2=${GDRIVE_USE_OAUTH2:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRESERVE_STRUCTURE=${PRESERVE_STRUCTURE:-true}
+      - RUN_ONCE=true
+      # Cron schedule (default: every 30 minutes)
+      # Format: minute hour day month weekday
+      # Examples:
+      #   */30 * * * *  = Every 30 minutes
+      #   0 */2 * * *   = Every 2 hours
+      #   0 0 * * *     = Once a day at midnight
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-*/30 * * * *}
+    profiles:
+      - cron
+
+  # One-shot mode (run once and exit - useful for testing)
+  sync-once:
+    build: .
+    container_name: gdrive-s3-sync-once
+    restart: "no"
+    env_file:
+      - .env
+    volumes:
+      - ./credentials:/app/credentials:ro
+      - ./logs:/app/logs
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID}
+      - GDRIVE_CREDENTIALS_PATH=/app/credentials/credentials.json
+      - GDRIVE_TOKEN_PATH=/app/credentials/token.pickle
+      - GDRIVE_USE_OAUTH2=${GDRIVE_USE_OAUTH2:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRESERVE_STRUCTURE=${PRESERVE_STRUCTURE:-true}
+      - RUN_ONCE=true
+    profiles:
+      - once
